@@ -5,6 +5,7 @@
 #
 require 'rubygems'
 require 'yaml'
+require 'open3'
 
 
 module GitChangeLog
@@ -19,14 +20,42 @@ module GitChangeLog
 
 end
 
+class BugzillaQuery
+
+  def initialize(config)
+    @bug_status = config['bug_status']
+    @product = config['product']
+    @flags = config['flag']
+    @format = config['format']
+  end
+
+  def login
+    system "bugzilla login" unless is_authenticated?
+  end
+
+  def query_bugs_to_change
+    result = ''
+    query = "bugzilla query -t '#{@bug_status}' -p '#{@product}' --flag=#{@flags} --bug_id=#{GitChangeLog.get_fixed_bugs} --outputformat='#{@format}'"
+    Open3.popen3(query) do |stdin, stdout, stderr, wait_thr|
+      while line = stderr.gets
+        puts line
+      end
+      result = stdout.read
+    end
+    result
+  end
+
+  private
+
+  def is_authenticated?
+    File.exist?("#{ENV['HOME']}/.bugzillacookies")
+  end
+
+end
 
 configfile = "#{ENV['HOME']}/.bugquery.yaml"
 if File.exist? configfile
   config = YAML.load_file(configfile)
-  bug_status = config['bug_status']
-  product = config['product']
-  flags = config['flag']
-  format = config['format']
 else
   puts <<-eos
   Need a configfile: #{configfile}
@@ -41,13 +70,12 @@ else
   exit
 end
 
-query = "bugzilla query -t '#{bug_status}' -p '#{product}' --flag=#{flags} --bug_id=#{GitChangeLog.get_fixed_bugs} --outputformat='#{format}'"
-system "bugzilla login" unless File.exist?("#{ENV['HOME']}/.bugzillacookies")
-puts query
-bugs_to_change = `#{query}`
+query = BugzillaQuery.new(config)
+query.login
+bugs_to_change = query.query_bugs_to_change
 
 if bugs_to_change.any?
   puts "Bugs to consider:\n#{bugs_to_change}"
 else
-  puts "No fixed bugs in status: #{bug_status}"
+  puts "No fixed bugs in status: #{config['bug_status']}"
 end
