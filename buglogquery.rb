@@ -6,12 +6,13 @@
 require 'rubygems'
 require 'yaml'
 require 'open3'
+require 'logger'
 
 
 module GitChangeLog
 
   def self.get_fixed_bugs
-    %x(#{log_for_bugs_query}).gsub!('Bug: ', '').split.join(',')
+    %x(#{log_for_bugs_query}).gsub!('Bug:', '').split.join(',')
   end
 
   def self.log_for_bugs_query
@@ -27,6 +28,8 @@ class BugzillaQuery
     @product = config['product']
     @flags = config['flag']
     @format = config['format']
+    @log = Logger.new(STDOUT)
+    @log.formatter = proc { |severity, datetime, progname, msg| "#{msg}\n" }
   end
 
   def login
@@ -36,6 +39,7 @@ class BugzillaQuery
   def query_bugs_to_change
     result = ''
     query = "bugzilla query -t '#{@bug_status}' -p '#{@product}' --flag=#{@flags} --bug_id=#{GitChangeLog.get_fixed_bugs} --outputformat='#{@format}'"
+    @log.info(query)
     Open3.popen3(query) do |stdin, stdout, stderr, wait_thr|
       while line = stderr.gets
         puts line
@@ -53,7 +57,9 @@ class BugzillaQuery
 
 end
 
+
 configfile = "#{ENV['HOME']}/.bugquery.yaml"
+
 if File.exist? configfile
   config = YAML.load_file(configfile)
 else
